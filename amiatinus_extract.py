@@ -1,5 +1,6 @@
 # Clone https://github.com/adunning/bedes-bible
 # and convert to JSON and plaintext
+# TODO: non-verse content formatting (e.g. spaces/commas between list items)
 import re,json
 from pathlib import Path
 from git import Repo
@@ -78,7 +79,7 @@ def extract():
             text = root.find('{http://www.tei-c.org/ns/1.0}text')
             for ref in text.iter('{http://www.tei-c.org/ns/1.0}milestone'):
                 ref.text = '\n' + ref.get('n') + ': '
-            for section in ['{http://www.tei-c.org/ns/1.0}p', '{http://www.tei-c.org/ns/1.0}div']:
+            for section in ['{http://www.tei-c.org/ns/1.0}div', '{http://www.tei-c.org/ns/1.0}p']:
                 for div in text.iter(section):
                     if div.text is not None:
                         div.text = '\n' + div.text
@@ -89,7 +90,6 @@ def extract():
                     milestone.tail = ' '
 
             segments = dict()
-            rubric_counter = 0
             doc_string = normalize(etree.tostring(text, method='text', encoding='unicode'))
             doc_string = re.sub(r'\n{1,3}(\D)', r'\1', doc_string)
             doc_string = re.sub(r'\n *\n', r'\n', doc_string)
@@ -103,16 +103,23 @@ def extract():
             verses = doc_string.split('\n')
             rubric_counter = 0
             bible[basename] = dict()
+            last_ref = None
             for verse in verses:
                 if ': ' in verse[:10]:
                     ref = verse.split(': ', 1)[0]
                     text = verse.split(': ', 1)[1]
+                    last_ref = ref
+                    if not re.search(r'^ *$', text):
+                        bible[basename][ref] = text.rstrip()
                 else:
-                    rubric_counter += 1
-                    ref = 'rubric' + str(rubric_counter)
-                    text = verse
-                if not re.search(r'^ *$', text):
-                    bible[basename][ref] = text
+                    if last_ref is not None:
+                        ref = last_ref
+                        bible[basename][ref] = ' '.join([bible[basename][ref], verse]).rstrip()
+                    else:
+                        if not re.search(r'^ *$', verse):
+                            rubric_counter += 1
+                            bible[basename]['frontmatter' + str(rubric_counter)] = verse.rstrip()
+
 
     with open(json_out, 'w') as f:
         json.dump(bible, f, ensure_ascii=False, indent=4)
